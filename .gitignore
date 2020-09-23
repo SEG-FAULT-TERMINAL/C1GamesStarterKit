@@ -4,6 +4,8 @@
 
 algos/*
 !algos/starter-algo-ZIPME
+scripts/test_algo_*
+*.replay
 
 dist/*
 !dist/.gitkeep
