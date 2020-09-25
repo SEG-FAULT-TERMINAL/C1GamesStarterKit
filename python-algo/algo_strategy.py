@@ -41,8 +41,15 @@ class AlgoStrategy(gamelib.AlgoCore):
         INTERCEPTOR = config["unitInformation"][5]["shorthand"]
         MP = 1
         SP = 0
+
         # This is a good place to do initial setup
+        # record locations at which we were scored by the enemy
         self.scored_on_locations = []
+        # constants for computing effectiveness of attack
+        global minGainPerSPSpent, weight_damage_enemy, weight_score
+        minGainPerSPSpent = 10
+        weight_damage_enemy = 1
+        weight_score = 12
 
     def on_turn(self, turn_state):
         """
@@ -56,7 +63,7 @@ class AlgoStrategy(gamelib.AlgoCore):
         gamelib.debug_write('Performing turn {} of your custom algo strategy'.format(game_state.turn_number))
         game_state.suppress_warnings(True)  #Comment or remove this line to enable warnings.
 
-        self.starter_strategy(game_state)
+        self.my_strategy(game_state)
 
         game_state.submit_turn()
 
@@ -66,7 +73,7 @@ class AlgoStrategy(gamelib.AlgoCore):
     strategy and can safely be replaced for your custom algo.
     """
 
-    def starter_strategy(self, game_state):
+    def my_strategy(self, game_state):
         """
         For defense we will use a spread out layout and some interceptors early on.
         We will place turrets near locations the opponent managed to score on.
@@ -78,8 +85,12 @@ class AlgoStrategy(gamelib.AlgoCore):
         # Now build reactive defenses based on where the enemy scored
         self.build_reactive_defense(game_state)
 
+        #if we have spare SP, let's build some Factories to generate more resources                                                                                                                                                                                                                       
+        factory_locations = [[13, 2], [14, 2], [13, 3], [14, 3]]
+        game_state.attempt_spawn(FACTORY, factory_locations)
+        
         # If the turn is less than 5, stall with interceptors and wait to see enemy's base
-        if game_state.turn_number < 5:
+        if game_state.turn_number < 3:
             self.stall_with_interceptors(game_state)
         else:
             # Now let's analyze the enemy base to see where their defenses are concentrated.
@@ -87,20 +98,105 @@ class AlgoStrategy(gamelib.AlgoCore):
             if self.detect_enemy_unit(game_state, unit_type=None, valid_x=None, valid_y=[14, 15]) > 10:
                 self.demolisher_line_strategy(game_state)
             else:
-                # They don't have many units in the front so lets figure out their least defended area and send Scouts there.
+                # try to attack
+                self.attempt_to_attack(game_state)
+                
+    def attempt_to_attack(self, game_state):
+        """
+        This function chooses between two types of attacks: all scouts vs. demolisher followed by interceptor
+        Gain function of each attack is evaluated. If gain is less than threshold, no attacks will be spawn
+        """
+        # maximum number of each units for each of the two strategies
+        max_scout_spawn = game_state.number_affordable(SCOUT)
+        max_interceptor_spawn = game_state.number_affordable(INTERCEPTOR) // 2
+        max_demolisher_spawn = game_state.number_affordable(DEMOLISHER) // 2
 
-                # Only spawn Scouts every other turn
-                # Sending more at once is better since attacks can only hit a single scout at a time
-                if game_state.turn_number % 2 == 1:
-                    # To simplify we will just check sending them from back left and right
-                    scout_spawn_location_options = [[13, 0], [14, 0]]
-                    best_location = self.least_damage_spawn_location(game_state, scout_spawn_location_options)
-                    game_state.attempt_spawn(SCOUT, best_location, 1000)
+        # initialize the gains
+        scout_gain = -999
+        demolisher_gain = -999
+        interceptor_gains = [-999, -999]
+        # and the location list for interceptor
+        # interceptor are sent after demolisher, so the locations should not overlap
+        # use the second best if the best one overlaps with the demolisher one
+        interceptor_deploy_locations = [[0,0], [0,0]]
 
-                # Lastly, if we have spare SP, let's build some Factories to generate more resources
-                factory_locations = [[13, 2], [14, 2], [13, 3], [14, 3]]
-                game_state.attempt_spawn(FACTORY, factory_locations)
+        # find available deploy locations on our edge
+        friendly_edges = game_state.game_map.get_edge_locations(game_state.game_map.BOTTOM_LEFT) + game_state.game_map.get_edge_locations(game_state.game_map.BOTTOM_RIGHT)
+        deploy_locations = self.filter_blocked_locations(friendly_edges, game_state)
 
+        # loop over all deploy locations and see how much gain we can get for each strategy: (damage to enemy units + score*12)
+        for location in deploy_locations:
+            gain_location_scout = self.gain_of_attack(game_state, max_scout_spawn, SCOUT, location)
+            gain_location_demolisher = self.gain_of_attack(game_state, max_demolisher_spawn, DEMOLISHER, location)
+            gain_location_interceptor = self.gain_of_attack(game_state, max_interceptor_spawn, INTERCEPTOR, location)
+            if gain_location_scout > scout_gain:
+                scout_deploy_location = location
+                scout_gain = gain_location_scout
+            if gain_location_demolisher > demolisher_gain:
+                demolisher_deploy_location = location
+                demolisher_gain = gain_location_demolisher
+            if gain_location_interceptor > interceptor_gains[0]:
+                interceptor_gains[1] = interceptor_gains[0]
+                interceptor_deploy_locations[1] = interceptor_deploy_locations[0]
+                interceptor_gains[0] = gain_location_interceptor
+                interceptor_deploy_locations[0] = location
+            elif gain_location_interceptor > interceptor_gains[1]:
+                interceptor_gains[1] = gain_location_interceptor
+                interceptor_deploy_locations[1] = location
+
+        # gain divided by the MP spent for the attack
+        # attack is ineffective if many MP were spent with little damage dealt to enemy units and low score
+        opt1_gain = scout_gain/(game_state.type_cost(SCOUT)[MP] * max_scout_spawn)
+        location_index = int(interceptor_deploy_locations[0] == demolisher_deploy_location) # use 0th location for interceptor if it's not overlapping, use the 1st one if it is
+        opt2_gain = (demolisher_gain + interceptor_gains[location_index])/(game_state.type_cost(DEMOLISHER)[MP] * max_demolisher_spawn + game_state.type_cost(INTERCEPTOR)[MP] * max_interceptor_spawn)
+
+        # check if the gains per MP spent reach the minimum threshold set
+        # compare the two strategies if they both passed the threshold
+        if opt1_gain >= minGainPerSPSpent and opt2_gain >= minGainPerSPSpent:
+            if opt1_gain >= opt2_gain:
+                game_state.attempt_spawn(SCOUT, scout_deploy_location, max_scout_spawn)
+            else:
+                game_state.attempt_spawn(DEMOLISHER, demolisher_deploy_location, max_demolisher_spawn)
+                game_state.attempt_spawn(INTERCEPTOR, interceptor_deploy_locations[location_index], max_interceptor_spawn)
+        elif opt1_gain >= minGainPerSPSpent:
+            game_state.attempt_spawn(SCOUT, scout_deploy_location, max_scout_spawn)
+        elif opt2_gain >= minGainPerSPSpent:
+            game_state.attempt_spawn(DEMOLISHER, demolisher_deploy_location, max_demolisher_spawn)
+            game_state.attempt_spawn(INTERCEPTOR, interceptor_deploy_locations[location_index], max_interceptor_spawn)
+        
+    def gain_of_attack(self, game_state, number_units, unit_type, location):
+        """
+        This function computes the weighted gain of a given type of attack starting at a specific location
+        """
+        path = game_state.find_path_to_edge(location)
+        damage_dealt = 0
+        turret_damage = gamelib.GameUnit(TURRET, game_state.config).damage_i
+        unit_class = gamelib.GameUnit(unit_type, game_state.config)
+        unit_health = unit_class.health
+        unit_range = unit_class.attackRange
+        remaining_units = number_units
+        total_heath = unit_health * number_units
+        for path_location in path:
+            num_turrets = len(game_state.get_attackers(path_location, 0))
+            for frame_index in range(int(1/(unit_class.speed))):
+                total_damage = unit_class.damage_f * remaining_units
+                damage_dealt += min(total_damage, self.total_target_health(game_state, path_location, unit_class.attackRange))
+                total_heath -= num_turrets * turret_damage
+                remaining_units = (total_heath // unit_health) + 1
+            return (damage_dealt*weight_damage_enemy + remaining_units*weight_score)
+                                    
+                                    
+    def total_target_health(self, game_state, location, unit_range):
+        possible_locations = game_state.game_map.get_locations_in_range(location, unit_range)
+        total_health = 0
+        for location in possible_locations:
+            for enemy_unit in game_state.game_map[location]:
+                if enemy_unit.player_index == 0:
+                    continue
+                else:
+                    total_health += enemy_unit.health
+        return total_health
+            
     def build_defences(self, game_state):
         """
         Build basic defenses using hardcoded locations.
@@ -161,11 +257,8 @@ class AlgoStrategy(gamelib.AlgoCore):
         # First let's figure out the cheapest unit
         # We could just check the game rules, but this demonstrates how to use the GameUnit class
         stationary_units = [WALL, TURRET, FACTORY]
-        cheapest_unit = WALL
-        for unit in stationary_units:
-            unit_class = gamelib.GameUnit(unit, game_state.config)
-            if unit_class.cost[game_state.MP] < gamelib.GameUnit(cheapest_unit, game_state.config).cost[game_state.MP]:
-                cheapest_unit = unit
+        unit_costs = [gamelib.GameUnit(unit, game_state.config).cost[game_state.MP] for unit in stationary_units]
+        cheapest_unit = stationary_units[unit_costs.index(min(unit_costs))]
 
         # Now let's build out a line of stationary units. This will prevent our demolisher from running into the enemy base.
         # Instead they will stay at the perfect distance to attack the front two rows of the enemy base.
