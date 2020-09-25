@@ -246,47 +246,47 @@ class AlgoStrategy(gamelib.AlgoCore):
         # upgrade walls so they soak more damage
         #game_state.attempt_upgrade(wall_locations)
 		
-	def build_defences(game_state, is_right_opening, wall_locs):
+    def build_defences(game_state, is_right_opening, wall_locs):
 
 		# Encryptors
-		factory_locations = [[10, 10], [17, 10]]
-		game_state.attempt_spawn(FACTORY, factory_locations)
+        factory_locations = [[10, 10], [17, 10]]
+        game_state.attempt_spawn(FACTORY, factory_locations)
 
 		# Upgrade encryptors
-		game_state.attempt_upgrade(factory_locations)
+        game_state.attempt_upgrade(factory_locations)
 
 		# More destructors around hole/opening
-		turret_locations = (
-			[[25, 12], [24, 11], [24, 10]]
-			if is_right_opening
-			else [[2, 12], [3, 11], [3, 10]]
-		)
-		game_state.attempt_spawn(TURRET, turret_locations)
+        turret_locations = (
+            [[25, 12], [24, 11], [24, 10]]
+            if is_right_opening
+            else [[2, 12], [3, 11], [3, 10]]
+        )
+        game_state.attempt_spawn(TURRET, turret_locations)
 
-		# Two more encryptors
-		factory_locations = [[10, 8], [17, 8]]
-		game_state.attempt_spawn(FACTORY, factory_locations)
-		game_state.attempt_upgrade(factory_locations)
+        # Two more encryptors
+        factory_locations = [[10, 8], [17, 8]]
+        game_state.attempt_spawn(FACTORY, factory_locations)
+        game_state.attempt_upgrade(factory_locations)
 
 		# Upgrade filter wall if additional destructors are added
 		# TODO: upgrade only some of the filters
-		if all(map(game_state.contains_stationary_unit, turret_locations)):
-			game_state.attempt_upgrade(wall_locs)
+        if all(map(game_state.contains_stationary_unit, turret_locations)):
+            game_state.attempt_upgrade(wall_locs)
 
 		# Center Destructors
-		turret_locations = [
-			[17, 11],
-			[6, 8],
-			[10, 11],
-			[15, 9],
-			[12, 9],
-			[15, 6],
-			[12, 6],
-		]
-		game_state.attempt_spawn(TURRET, turret_locations)
+        turret_locations = [
+            [17, 11],
+            [6, 8],
+            [10, 11],
+            [15, 9],
+            [12, 9],
+            [15, 6],
+            [12, 6],
+        ]
+        game_state.attempt_spawn(TURRET, turret_locations)
 
 		# Upgrade destructors in the back
-		game_state.attempt_upgrade([[3, 10], [24, 10]])		
+        game_state.attempt_upgrade([[3, 10], [24, 10]])		
 
     def build_defences_with_adaptive_opening(
         game_state, is_right_opening, wall_locs
@@ -327,35 +327,35 @@ class AlgoStrategy(gamelib.AlgoCore):
         game_state.attempt_spawn(WALL, final_wall_locs)
         return final_wall_locs, is_right_opening, save_cores
 
-	def should_right_be_open(game_state, weights=None):
+    def should_right_be_open(game_state, weights=None):
 	
-		if not weights:
+        if not weights:
 			# WALL is worth 1 badness pt, TURRET - 6 badness pts.
-			weights = [1, 6]
+            weights = [1, 6]
 
-		weights_by_def_unit = dict(zip([WALL, TURRET], weights))
+        weights_by_def_unit = dict(zip([WALL, TURRET], weights))
 
-		left_strength, right_strength = (0, 0)
+        left_strength, right_strength = (0, 0)
 
-		for location in game_state.game_map:
-			if game_state.contains_stationary_unit(location):
-				for unit in game_state.game_map[location]:
-					if unit.player_index == 1 and (
-						unit.unit_type == TURRET or unit.unit_type == WALL
-					):
-						if location[0] < 10:
-							left_strength += weights_by_def_unit[unit.unit_type]
-						elif location[0] > 17:
-							right_strength += weights_by_def_unit[unit.unit_type]
+        for location in game_state.game_map:
+            if game_state.contains_stationary_unit(location):
+                for unit in game_state.game_map[location]:
+                    if unit.player_index == 1 and (
+                        unit.unit_type == TURRET or unit.unit_type == WALL
+                    ):
+                        if location[0] < 10:
+                            left_strength += weights_by_def_unit[unit.unit_type]
+                        elif location[0] > 17:
+                            right_strength += weights_by_def_unit[unit.unit_type]
 
 		# Return side with less strength
-		if left_strength > right_strength:
-			right = True
-		elif left_strength < right_strength:
-			right = False
-		else:
-			right = bool(random.randint(0, 1))
-		return right
+        if left_strength > right_strength:
+            right = True
+        elif left_strength < right_strength:
+            right = False
+        else:
+            right = bool(random.randint(0, 1))
+        return right
 		
 		
     def build_reactive_defense(self, game_state):
