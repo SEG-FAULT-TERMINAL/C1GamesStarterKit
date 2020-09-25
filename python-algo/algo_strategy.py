@@ -50,7 +50,30 @@ class AlgoStrategy(gamelib.AlgoCore):
         minGainPerSPSpent = 10
         weight_damage_enemy = 1
         weight_score = 12
-
+        self.is_right_opening = True
+        self.wall_locs = [
+            [0, 13],
+            [1, 13],
+            [5, 13],
+            [6, 13],
+            [7, 13],
+            [8, 13],
+            [9, 13],
+            [11, 13],
+            [12, 13],
+            [13, 13],
+            [14, 13],
+            [15, 13],
+            [16, 13],
+            [18, 13],
+            [19, 13],
+            [20, 13],
+            [21, 13],
+            [22, 13],
+            [26, 13],
+            [27, 13],
+        ]
+		
     def on_turn(self, turn_state):
         """
         This function is called every turn with the game state wrapper as
@@ -80,10 +103,17 @@ class AlgoStrategy(gamelib.AlgoCore):
         For offense we will use long range demolishers if they place stationary units near the enemy's front.
         If there are no stationary units to attack in the front, we will send Scouts to try and score quickly.
         """
-        # First, place basic defenses
-        self.build_defences(game_state)
-        # Now build reactive defenses based on where the enemy scored
-        self.build_reactive_defense(game_state)
+		
+        wall_locs, self.is_right_opening, save_cores = build_defences_with_adaptive_opening(
+            game_state, self.is_right_opening, self.wall_locs
+        )
+
+        if game_state.turn_number > 3:
+            # Defence
+            if not save_cores:
+                build_defences(
+                    game_state, self.is_right_opening, wall_locs
+                )
 
         #if we have spare SP, let's build some Factories to generate more resources                                                                                                                                                                                                                       
         factory_locations = [[13, 2], [14, 2], [13, 3], [14, 3]]
@@ -259,7 +289,7 @@ class AlgoStrategy(gamelib.AlgoCore):
 		game_state.attempt_upgrade([[3, 10], [24, 10]])		
 
     def build_defences_with_adaptive_opening(
-        game_state, is_right_opening, filter_locs
+        game_state, is_right_opening, wall_locs
     ):
 
         # Place destructors that attack enemy units
@@ -277,7 +307,7 @@ class AlgoStrategy(gamelib.AlgoCore):
         # Find the weaker side of enemy's defence
         # Open up our filter defence towards that side
 
-        final_wall_locs = list(filter_locs)
+        final_wall_locs = list(wall_locs)
 
         if game_state.turn_number % 4 == 0:
             is_right_opening = should_right_be_open(game_state)
