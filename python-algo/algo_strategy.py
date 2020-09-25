@@ -197,7 +197,7 @@ class AlgoStrategy(gamelib.AlgoCore):
                     total_health += enemy_unit.health
         return total_health
             
-    def build_defences(self, game_state):
+    #def build_defences(self, game_state):
         """
         Build basic defenses using hardcoded locations.
         Remember to defend corners and avoid placing units in the front where enemy demolishers can attack them.
@@ -206,16 +206,128 @@ class AlgoStrategy(gamelib.AlgoCore):
         # More community tools available at: https://terminal.c1games.com/rules#Download
 
         # Place turrets that attack enemy units
-        turret_locations = [[0, 13], [27, 13], [8, 11], [19, 11], [13, 11], [14, 11]]
+        #turret_locations = [[0, 13], [27, 13], [8, 11], [19, 11], [13, 11], [14, 11]]
         # attempt_spawn will try to spawn units if we have resources, and will check if a blocking unit is already there
-        game_state.attempt_spawn(TURRET, turret_locations)
+        #game_state.attempt_spawn(TURRET, turret_locations)
         
         # Place walls in front of turrets to soak up damage for them
-        wall_locations = [[8, 12], [19, 12]]
-        game_state.attempt_spawn(WALL, wall_locations)
+        #wall_locations = [[8, 12], [19, 12]]
+        #game_state.attempt_spawn(WALL, wall_locations)
         # upgrade walls so they soak more damage
-        game_state.attempt_upgrade(wall_locations)
+        #game_state.attempt_upgrade(wall_locations)
+		
+	def build_defences(game_state, is_right_opening, wall_locs):
 
+		# Encryptors
+		factory_locations = [[10, 10], [17, 10]]
+		game_state.attempt_spawn(FACTORY, factory_locations)
+
+		# Upgrade encryptors
+		game_state.attempt_upgrade(factory_locations)
+
+		# More destructors around hole/opening
+		turret_locations = (
+			[[25, 12], [24, 11], [24, 10]]
+			if is_right_opening
+			else [[2, 12], [3, 11], [3, 10]]
+		)
+		game_state.attempt_spawn(TURRET, turret_locations)
+
+		# Two more encryptors
+		factory_locations = [[10, 8], [17, 8]]
+		game_state.attempt_spawn(FACTORY, factory_locations)
+		game_state.attempt_upgrade(factory_locations)
+
+		# Upgrade filter wall if additional destructors are added
+		# TODO: upgrade only some of the filters
+		if all(map(game_state.contains_stationary_unit, turret_locations)):
+			game_state.attempt_upgrade(wall_locs)
+
+		# Center Destructors
+		turret_locations = [
+			[17, 11],
+			[6, 8],
+			[10, 11],
+			[15, 9],
+			[12, 9],
+			[15, 6],
+			[12, 6],
+		]
+		game_state.attempt_spawn(TURRET, turret_locations)
+
+		# Upgrade destructors in the back
+		game_state.attempt_upgrade([[3, 10], [24, 10]])		
+
+    def build_defences_with_adaptive_opening(
+        game_state, is_right_opening, filter_locs
+    ):
+
+        # Place destructors that attack enemy units
+        turret_locations = [[2, 13], [3, 13], [10, 13], [17, 13], [24, 13], [25, 13]]
+        game_state.attempt_spawn(TURRET, turret_locations)
+        save_cores = False
+
+        # Save up cores until all wall-destructors are built
+        if not all(map(game_state.contains_stationary_unit, turret_locations)):
+            save_cores = True
+
+        if game_state.turn_number < 4:
+            return [], True, save_cores
+
+        # Find the weaker side of enemy's defence
+        # Open up our filter defence towards that side
+
+        final_wall_locs = list(filter_locs)
+
+        if game_state.turn_number % 4 == 0:
+            is_right_opening = should_right_be_open(game_state)
+
+        if is_right_opening:
+            remove_wall_at = [[23, 13]]
+            final_wall_locs.append([4, 13])
+
+        else:
+            remove_wall_at = [[4, 13]]
+            final_wall_locs.append([23, 13])
+
+        game_state.attempt_remove(remove_wall_at)
+
+        final_wall_locs.sort(key=itemgetter(0), reverse=(not is_right_opening))
+
+        game_state.attempt_spawn(WALL, final_wall_locs)
+        return final_wall_locs, is_right_opening, save_cores
+
+	def should_right_be_open(game_state, weights=None):
+	
+		if not weights:
+			# WALL is worth 1 badness pt, TURRET - 6 badness pts.
+			weights = [1, 6]
+
+		weights_by_def_unit = dict(zip([WALL, TURRET], weights))
+
+		left_strength, right_strength = (0, 0)
+
+		for location in game_state.game_map:
+			if game_state.contains_stationary_unit(location):
+				for unit in game_state.game_map[location]:
+					if unit.player_index == 1 and (
+						unit.unit_type == TURRET or unit.unit_type == WALL
+					):
+						if location[0] < 10:
+							left_strength += weights_by_def_unit[unit.unit_type]
+						elif location[0] > 17:
+							right_strength += weights_by_def_unit[unit.unit_type]
+
+		# Return side with less strength
+		if left_strength > right_strength:
+			right = True
+		elif left_strength < right_strength:
+			right = False
+		else:
+			right = bool(random.randint(0, 1))
+		return right
+		
+		
     def build_reactive_defense(self, game_state):
         """
         This function builds reactive defenses based on where the enemy scored on us from.
