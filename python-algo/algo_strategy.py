@@ -4,7 +4,7 @@ import math
 import warnings
 from sys import maxsize
 import json
-
+from operator import itemgetter
 
 """
 Most of the algo code you write will be in this file unless you create new
@@ -104,16 +104,14 @@ class AlgoStrategy(gamelib.AlgoCore):
         If there are no stationary units to attack in the front, we will send Scouts to try and score quickly.
         """
 		
-        wall_locs, self.is_right_opening, save_cores = build_defences_with_adaptive_opening(
+        wall_locs, self.is_right_opening, save_cores = self.build_defences_with_adaptive_opening(
             game_state, self.is_right_opening, self.wall_locs
         )
 
         if game_state.turn_number > 3:
             # Defence
             if not save_cores:
-                build_defences(
-                    game_state, self.is_right_opening, wall_locs
-                )
+                self.build_defences(game_state, self.is_right_opening, wall_locs)
 
         #if we have spare SP, let's build some Factories to generate more resources                                                                                                                                                                                                                       
         factory_locations = [[13, 2], [14, 2], [13, 3], [14, 3]]
@@ -246,16 +244,16 @@ class AlgoStrategy(gamelib.AlgoCore):
         # upgrade walls so they soak more damage
         #game_state.attempt_upgrade(wall_locations)
 		
-    def build_defences(game_state, is_right_opening, wall_locs):
+    def build_defences(self, game_state, is_right_opening, wall_locs):
 
-		# Encryptors
+	# Encryptors
         factory_locations = [[10, 10], [17, 10]]
         game_state.attempt_spawn(FACTORY, factory_locations)
 
-		# Upgrade encryptors
+	# Upgrade encryptors
         game_state.attempt_upgrade(factory_locations)
 
-		# More destructors around hole/opening
+	# More destructors around hole/opening
         turret_locations = (
             [[25, 12], [24, 11], [24, 10]]
             if is_right_opening
@@ -268,12 +266,12 @@ class AlgoStrategy(gamelib.AlgoCore):
         game_state.attempt_spawn(FACTORY, factory_locations)
         game_state.attempt_upgrade(factory_locations)
 
-		# Upgrade filter wall if additional destructors are added
-		# TODO: upgrade only some of the filters
+	# Upgrade filter wall if additional destructors are added
+	# TODO: upgrade only some of the filters
         if all(map(game_state.contains_stationary_unit, turret_locations)):
             game_state.attempt_upgrade(wall_locs)
 
-		# Center Destructors
+	# Center Destructors
         turret_locations = [
             [17, 11],
             [6, 8],
@@ -285,12 +283,10 @@ class AlgoStrategy(gamelib.AlgoCore):
         ]
         game_state.attempt_spawn(TURRET, turret_locations)
 
-		# Upgrade destructors in the back
+	# Upgrade destructors in the back
         game_state.attempt_upgrade([[3, 10], [24, 10]])		
 
-    def build_defences_with_adaptive_opening(
-        game_state, is_right_opening, wall_locs
-    ):
+    def build_defences_with_adaptive_opening(self, game_state, is_right_opening, wall_locs):
 
         # Place destructors that attack enemy units
         turret_locations = [[2, 13], [3, 13], [10, 13], [17, 13], [24, 13], [25, 13]]
@@ -310,7 +306,7 @@ class AlgoStrategy(gamelib.AlgoCore):
         final_wall_locs = list(wall_locs)
 
         if game_state.turn_number % 4 == 0:
-            is_right_opening = should_right_be_open(game_state)
+            is_right_opening = self.should_right_be_open(game_state)
 
         if is_right_opening:
             remove_wall_at = [[23, 13]]
@@ -327,7 +323,7 @@ class AlgoStrategy(gamelib.AlgoCore):
         game_state.attempt_spawn(WALL, final_wall_locs)
         return final_wall_locs, is_right_opening, save_cores
 
-    def should_right_be_open(game_state, weights=None):
+    def should_right_be_open(self, game_state, weights=None):
 	
         if not weights:
 			# WALL is worth 1 badness pt, TURRET - 6 badness pts.
